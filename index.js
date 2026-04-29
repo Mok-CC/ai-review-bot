@@ -4,24 +4,33 @@ const { Webhooks } = require('@octokit/webhooks');
 const { Octokit } = require('@octokit/rest');
 const { createAppAuth } = require('@octokit/auth-app');
 const OpenAI = require('openai');
-const fs = require('fs');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const agent = new HttpsProxyAgent('http://127.0.0.1:7897');
 
+const agent = process.env.HTTPS_PROXY 
+ ? new HttpsProxyAgent(process.env.HTTPS_PROXY) 
+ : undefined;
 
 const app = express();
 app.use(express.raw({ type: 'application/json' }));
 
-const privateKey = fs.readFileSync(process.env.PRIVATE_KEY_PATH, 'utf8');
-const webhooks = new Webhooks({ secret: process.env.WEBHOOK_SECRET });
+// === 检查必须的环境变量 ===
+const required = ['GITHUB_PRIVATE_KEY', 'APP_ID', 'GITHUB_WEBHOOK_SECRET', 'DEEPSEEK_API_KEY'];
+for (const key of required) {
+ if (!process.env[key]) {
+ console.error(`❌ 缺少环境变量: ${key}`);
+ process.exit(1);
+ }
+}
+console.log('✅ 环境变量检查通过');
 
-// DeepSeek 客户端（兼容 OpenAI API）
+const privateKey = process.env.GITHUB_PRIVATE_KEY.replace(/\\n/g, '\n');
+const webhooks = new Webhooks({ secret: process.env.GITHUB_WEBHOOK_SECRET });
+
 const deepseek = new OpenAI({
  baseURL: 'https://api.deepseek.com/v1',
  apiKey: process.env.DEEPSEEK_API_KEY,
 });
 
-// 获取 GitHub API 客户端
 function getOctokit(installationId) {
  return new Octokit({
  authStrategy: createAppAuth,
@@ -30,14 +39,10 @@ function getOctokit(installationId) {
  privateKey: privateKey,
  installationId: installationId,
  },
- request: {
- agent: proxyAgent,
- },
+ request: { agent },
  });
 }
 
-
-// Webhook 入口
 app.post('/webhook', async (req, res) => {
  const signature = req.headers['x-hub-signature-256'];
  const payload = req.body.toString('utf8');
@@ -55,7 +60,6 @@ app.post('/webhook', async (req, res) => {
  res.status(200).send('OK');
 });
 
-// 核心：审查 PR
 async function reviewPR(event) {
  const { repository, pull_request, installation } = event;
  const owner = repository.owner.login;
@@ -66,7 +70,6 @@ async function reviewPR(event) {
 
  const octokit = getOctokit(installation.id);
 
- // 1. 拉取 diff
  const { data: diff } = await octokit.pulls.get({
  owner,
  repo,
@@ -74,7 +77,6 @@ async function reviewPR(event) {
  mediaType: { format: 'diff' },
  });
 
- // 2. 调 DeepSeek
  const truncatedDiff = diff.slice(0, 8000);
  const review = await deepseek.chat.completions.create({
  model: 'deepseek-chat',
@@ -97,7 +99,6 @@ ${truncatedDiff}
 
  const reviewBody = review.choices[0].message.content;
 
- // 3. 发回 GitHub 评论
  await octokit.issues.createComment({
  owner,
  repo,
@@ -108,4 +109,5 @@ ${truncatedDiff}
  console.log('审查完成，评论已发送');
 }
 
-app.listen(3000, () => console.log('服务器跑在 http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`服务器跑在 port ${PORT}`));
