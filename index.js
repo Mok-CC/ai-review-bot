@@ -15,7 +15,9 @@ const agent = process.env.HTTPS_PROXY
 const app = express();
 app.use(express.raw({ type: 'application/json' }));
 
-const privateKey = fs.readFileSync(process.env.PRIVATE_KEY_PATH, 'utf8');
+const privateKey = process.env.GITHUB_PRIVATE_KEY 
+ ? process.env.GITHUB_PRIVATE_KEY.replace(/\\n/g, '\n')
+ : fs.readFileSync(process.env.GITHUB_PRIVATE_KEY_PATH, 'utf8');
 const webhooks = new Webhooks({ secret: process.env.WEBHOOK_SECRET });
 
 // DeepSeek 客户端（兼容 OpenAI API）
