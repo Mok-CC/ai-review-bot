@@ -6,7 +6,10 @@ const { createAppAuth } = require('@octokit/auth-app');
 const OpenAI = require('openai');
 const fs = require('fs');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const agent = new HttpsProxyAgent('http://127.0.0.1:7897');
+const agent = process.env.HTTPS_PROXY 
+ ? new HttpsProxyAgent(process.env.HTTPS_PROXY) 
+ : undefined;
+
 
 
 const app = express();
