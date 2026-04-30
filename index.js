@@ -13,7 +13,7 @@ const app = express();
 app.use(express.raw({ type: 'application/json' }));
 
 // === 检查必须的环境变量 ===
-const required = ['GITHUB_PRIVATE_KEY', 'APP_ID', 'GITHUB_WEBHOOK_SECRET', 'DEEPSEEK_API_KEY'];
+const required = [ 'APP_ID', 'GITHUB_WEBHOOK_SECRET', 'DEEPSEEK_API_KEY','GITHUB_PRIVATE_KEY',];
 for (const key of required) {
  if (!process.env[key]) {
  console.error(`❌ 缺少环境变量: ${key}`);
