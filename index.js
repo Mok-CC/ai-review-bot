@@ -3,9 +3,10 @@ const express = require('express');
 const { Webhooks } = require('@octokit/webhooks');
 const { getOctokit, getPRFiles, postReviewComments, postComment } = require('./src/github');
 const { reviewPR } = require('./src/reviewer');
+const { saveReview, getReviews, getStats } = require('./src/db');
 
 const app = express();
-app.use(express.raw({ type: 'application/json' }));
+app.use(express.json());
 
 // === 检查必须的环境变量 ===
 const required = ['GITHUB_APP_ID', 'GITHUB_WEBHOOK_SECRET', 'DEEPSEEK_API_KEY', 'GITHUB_PRIVATE_KEY'];
@@ -32,7 +33,8 @@ app.post('/webhook', async (req, res) => {
 
   // 只处理 PR opened 和 synchronize
   if (event.action === 'opened' || event.action === 'synchronize') {
-    await handlePullRequest(event);
+    // 不等待完成，立即返回，避免 GitHub 超时
+    handlePullRequest(event).catch(console.error);
   }
 
   res.status(200).send('OK');
@@ -43,9 +45,10 @@ async function handlePullRequest(event) {
   const { repository, pull_request, installation } = event;
   const owner = repository.owner.login;
   const repo = repository.name;
+  const repoFullName = `${owner}/${repo}`;
   const prNumber = pull_request.number;
 
-  console.log(`🤖 开始审查 PR #${prNumber} in ${owner}/${repo}`);
+  console.log(`🤖 开始审查 PR #${prNumber} in ${repoFullName}`);
 
   try {
     const octokit = getOctokit(installation.id);
@@ -77,10 +80,53 @@ async function handlePullRequest(event) {
       });
       console.log('✅ 审查完成，无问题');
     }
+
+    // 4. 保存记录到数据库
+    saveReview({
+      prNumber,
+      repo: repoFullName,
+      status: 'success',
+      fileCount: files.length,
+      commentCount: comments.length,
+    });
+
   } catch (err) {
-    console.error('审查失败:', err);
+    console.error('❌ 审查失败:', err);
+
+    // 保存失败记录
+    saveReview({
+      prNumber,
+      repo: repoFullName,
+      status: 'failed',
+      fileCount: 0,
+      commentCount: 0,
+    });
   }
 }
+
+// === Dashboard API ===
+
+// 获取统计数据
+app.get('/api/stats', (req, res) => {
+  try {
+    const stats = getStats();
+    res.json(stats);
+  } catch (err) {
+    console.error('获取统计失败:', err);
+    res.status(500).json({ error: '获取统计失败' });
+  }
+});
+
+// 获取审查历史
+app.get('/api/reviews', (req, res) => {
+  try {
+    const reviews = getReviews();
+    res.json(reviews);
+  } catch (err) {
+    console.error('获取历史失败:', err);
+    res.status(500).json({ error: '获取历史失败' });
+  }
+});
 
 // === 启动 ===
 const PORT = process.env.PORT || 3000;
