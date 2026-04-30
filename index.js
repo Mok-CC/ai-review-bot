@@ -1,11 +1,13 @@
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const { Webhooks } = require('@octokit/webhooks');
 const { getOctokit, getPRFiles, postReviewComments, postComment } = require('./src/github');
 const { reviewPR } = require('./src/reviewer');
 const { saveReview, getReviews, getStats } = require('./src/db');
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 // === 检查必须的环境变量 ===
